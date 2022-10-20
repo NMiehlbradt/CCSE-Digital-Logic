@@ -1,0 +1,49 @@
+{
+  "types": {
+    "reg" : {
+      "rz": "000",
+      "r0": "000",
+      "r1": "001",
+      "r2": "010",
+      "r3": "011",
+      "r4": "100",
+      "r5": "101",
+      "r6": "110",
+      "r7": "111"
+    }
+  },
+  "instructions" : {
+    "put" : {
+      "asm": "put <rd:reg>, <imm:uint8>",
+      "bin": "0000 0 rd imm"
+    },
+    "jnz" : {
+      "asm": "jnz <imm:sint8>",
+      "bin": "0010 0000 imm"
+    },
+    "ldr" : {
+      "asm": "ldr <rd:reg>, [<ra:reg>]",
+      "bin": "0100 0 rd 0 ra 0000"
+    },
+    "str" : {
+      "asm": "str <rd:reg>, [<ra:reg>]",
+      "bin": "0101 0 rd 0 ra 0000"
+    },
+    "add" : {
+      "asm": "add <rd:reg>, <ra:reg>, <rb:reg>",
+      "bin": "1000 0 rd 0 ra 0 rb"
+    },
+    "orr" : {
+      "asm": "orr <rd:reg>, <ra:reg>, <rb:reg>",
+      "bin": "1001 0 rd 0 ra 0 rb"
+    },
+    "and" : {
+      "asm": "and <rd:reg>, <ra:reg>, <rb:reg>",
+      "bin": "1010 0 rd 0 ra 0 rb"
+    },
+    "not" : {
+      "asm": "not <rd:reg>, <ra:reg>",
+      "bin": "1011 0 rd 0 ra 0000"
+    }
+  }
+}

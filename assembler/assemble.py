@@ -15,6 +15,10 @@ def parse_reg(reg, line_num):
     reg = reg.lower()
     if reg == 'rz':
         return '000'
+    if reg == 'sp':
+        return '110'
+    if reg == 'lr':
+        return '111'
     m = re.search('^r([0-7)])$', reg)
     if m is not None:
         return f'{int(m.groups()[0]):03b}'
@@ -69,6 +73,15 @@ def parse_label_or_num(bits, signed):
     return parse
 
 
+def label_to_num(labels, is_num, target, bits, signed, line_num, address=0):
+    if not is_num:
+        if target in labels:
+            target = format_number(labels[target] - address, bits, signed, line_num)
+        else:
+            raise AssemblerError(f'Label \'{target}\' not defined', line_num)
+    return target
+
+
 def parse_args(instr, args, parser_map, line_num):
     if len(args) != len(parser_map):
         raise AssemblerError(f'Incorrect number of arguments for instruction \'{instr}\'. '
@@ -87,6 +100,10 @@ def i_instr(op, rd, imm8):
 
 def r_instr(op, rd, ra, rb):
     return mk_instr(f'{op:04b}0{rd}0{ra}0{rb}')
+
+
+def l_instr(op, imm12):
+    return mk_instr(f'{op:04b}{imm12}')
 
 
 def parse_line(line, line_num, address):
@@ -117,35 +134,55 @@ def parse_line(line, line_num, address):
         # Parse assembler directive
         op = op[1:]
         if op == 'long':
-            def parse_arg
-            binary = []  # TODO
+            def parse_arg(arg):
+                is_signed = arg[0] == '-'
+                parsed = parse_label_or_num(16, is_signed)(arg, line_num)
+                return lambda l: label_to_num(l, *parsed, 16, is_signed, line_num)
+
+            binary = [parse_arg(arg) for arg in args]
         else:
             raise AssemblerError(f'Unknown assembler directive \'{op}\'', line_num)
     else:
         # Parse instruction
         if op == 'put':
-            params = parse_args(op, args, [('rd', parse_reg), ('imm8', parse_number(8, False))], line_num)
-            binary = i_instr(0, params['rd'], params['imm8'])
+            params = parse_args(op, args, [('rd', parse_reg), ('imm8', parse_label_or_num(8, False))], line_num)
+
+            def mk_put(labels):
+                target = label_to_num(labels, *params['imm8'], 8, False, line_num)
+                return i_instr(0, params['rd'], target)[0](labels)
+
+            binary = [mk_put]
         elif op[0] == 'j':
             params = parse_args(op, args, [('target', parse_label_or_num(8, True))], line_num)
             jmp_type = op[1:]
             if jmp_type == 'nz':
                 jmp_code = '0000'
+            if jmp_type == 'z':
+                jmp_code = '0001'
+            if jmp_type == '' or jmp_type == 'al':
+                jmp_code = '1111'
             else:
                 raise AssemblerError(f'Unknown jump type \'{jmp_type}\'', line_num)
 
             def mk_jmp_instr(labels):
-                is_num, target = params['target']
-                if not is_num:
-                    if target in labels:
-                        target = format_number(labels[target] - address, 8, True, line_num)
-                    else:
-                        raise AssemblerError(f'Label \'{target}\' not defined', line_num)
-
+                target = label_to_num(labels, *params['target'], 8, True, line_num, address=address)
                 return f'0010{jmp_code}{target}'
 
-            binary = [mk_jmp_instr]  # TODO
+            binary = [mk_jmp_instr]
             pass
+        elif op == 'call':
+            params = parse_args(op, args, [('imm12', parse_label_or_num(12, True))], line_num)
+
+            def mk_call(labels):
+                target = label_to_num(labels, *params['imm12'], 12, True, line_num, address=address)
+                if int(target) == 0:
+                    raise AssemblerError('Call instruction cannot have an offset of 0', line_num)
+                return l_instr(3, target)[0](labels)
+
+            binary = [mk_call]
+        elif op == 'ret':
+            params = parse_args(op, args, [], line_num)
+            binary = l_instr(3, format_number(0, 12, False, line_num))
         elif op == 'ldr':
             params = parse_args(op, args, [('rd', parse_reg), ('ra', parse_mem)], line_num)
             binary = r_instr(4, params['rd'], params['ra'], '000')
@@ -164,6 +201,19 @@ def parse_line(line, line_num, address):
         elif op == 'not':
             params = parse_args(op, args, [('rd', parse_reg), ('ra', parse_reg)], line_num)
             binary = r_instr(11, params['rd'], params['ra'], '000')
+        elif op == 'sub':
+            params = parse_args(op, args, [('rd', parse_reg), ('ra', parse_reg), ('rb', parse_reg)], line_num)
+            binary = r_instr(12, params['rd'], params['ra'], params['rb'])
+        # Pseudo ops
+        elif op == 'nop':
+            params = parse_args(0, args, [], line_num)
+            binary = mk_instr('0000000000000000')
+        elif op == 'cmp':
+            params = parse_args(op, args, [('ra', parse_reg), ('rb', parse_reg)], line_num)
+            binary = r_instr(12, '000', params['ra'], params['rb'])
+        elif op == 'mov':
+            params = parse_args(op, args, [('rd', parse_reg), ('rs', parse_reg)], line_num)
+            binary = r_instr(8, params['rd'], params['rs'], '000')
         else:
             raise AssemblerError(f'Invalid opcode \'{op}\'', line_num)
 
@@ -192,7 +242,9 @@ def parse_lines(lines):
 
     for gen in contents:
         try:
-            machine_code.append(int(gen(labels), base=2))
+            b = gen(labels)
+            print(b)
+            machine_code.append(int(b, base=2))
         except AssemblerError as asm_err:
             print(asm_err)
             errors += 1
@@ -224,5 +276,9 @@ if __name__ == '__main__':
         print('-'*80)
     if args.show or args.out is None:
         print('\n'.join(f'0x{addr:04x}: 0x{instr:04x} ' for addr, instr in enumerate(machine_code)))
+
+    if args.out is not None:
+        with open(args.out, 'wb') as f:
+            f.writelines(int.to_bytes(instr, 2, 'little') for instr in machine_code)
 
 

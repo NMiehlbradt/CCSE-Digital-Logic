@@ -157,9 +157,9 @@ def parse_line(line, line_num, address):
             jmp_type = op[1:]
             if jmp_type == 'nz':
                 jmp_code = '0000'
-            if jmp_type == 'z':
+            elif jmp_type == 'z':
                 jmp_code = '0001'
-            if jmp_type == '' or jmp_type == 'al':
+            elif jmp_type == '' or jmp_type == 'al':
                 jmp_code = '1111'
             else:
                 raise AssemblerError(f'Unknown jump type \'{jmp_type}\'', line_num)
@@ -243,7 +243,6 @@ def parse_lines(lines):
     for gen in contents:
         try:
             b = gen(labels)
-            print(b)
             machine_code.append(int(b, base=2))
         except AssemblerError as asm_err:
             print(asm_err)
